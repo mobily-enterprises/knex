@@ -2754,6 +2754,8 @@ declare namespace Knex {
     jsonbSupport?: boolean;
     version?: string;
     connection?: string | StaticConnectionConfig | ConnectionConfigProvider;
+    connections?: ConnectionsConfig;
+    connectionResolver?: ConnectionResolver;
     pool?: PoolConfig;
     migrations?: MigratorConfig;
     postProcessResponse?: (result: any, queryContext: any) => any;
@@ -2776,6 +2778,30 @@ declare namespace Knex {
      */
     defaultDateTimePrecision?: number;
   }
+
+  interface ConnectionResolverContext {
+    method?: string;
+    tableName?: string;
+    sql?: string;
+    queryContext?: any;
+    transactionId?: string;
+    isTransaction?: boolean;
+  }
+
+  type ConnectionResolver = (
+    context: ConnectionResolverContext
+  ) => string | null | undefined | Promise<string | null | undefined>;
+
+  type ConnectionEntryConfig =
+    | string
+    | StaticConnectionConfig
+    | ConnectionConfigProvider
+    | {
+        connection: string | StaticConnectionConfig | ConnectionConfigProvider;
+        pool?: PoolConfig;
+      };
+
+  type ConnectionsConfig = Record<string, ConnectionEntryConfig>;
 
   type StaticConnectionConfig =
     | ConnectionConfig
@@ -3264,7 +3290,7 @@ declare namespace Knex {
     driverName: string;
     connectionSettings: object;
 
-    acquireRawConnection(): Promise<any>;
+    acquireRawConnection(connectionSettings?: any): Promise<any>;
     destroyRawConnection(connection: any): Promise<void>;
     validateConnection(connection: any): Promise<boolean>;
     logger: Logger;
@@ -3305,10 +3331,12 @@ declare namespace Knex {
       max: number;
       propagateCreateError: boolean;
     };
-    getPoolSettings(poolConfig: any): any;
+    getPoolSettings(poolConfig: any, poolContext?: any): any;
     initializePool(config?: {}): void;
+    initializePools(config?: {}): void;
     pool: Pool<any> | undefined;
-    acquireConnection(): any;
+    pools: Record<string, Pool<any>> | undefined;
+    acquireConnection(context?: any): any;
     releaseConnection(connection: any): any;
     destroy(callback: any): any;
     database(): any;
