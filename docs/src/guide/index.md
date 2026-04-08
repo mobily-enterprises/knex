@@ -307,6 +307,68 @@ const knex = require('knex')({
 });
 ```
 
+#### Connection routing with named connections
+
+You can define multiple named connections and a `connectionResolver` hook to decide which one to use per query. Each named connection gets its own pool. If only one named connection is provided, it becomes the default and `connectionResolver` is optional. If you configure multiple connections, you must either provide a `connectionResolver` or include a `default`/`master` connection. Each named connection can be a connection object, a connection string, or a function that returns a config.
+
+```js
+const knex = require('knex')({
+  client: 'pg',
+  connections: {
+    master: {
+      connection: { host: 'master.db', user: 'write_user', password: 'secret' },
+      pool: { min: 2, max: 10 },
+    },
+    replica: {
+      connection: { host: 'replica.db', user: 'read_user', password: 'secret' },
+      pool: { min: 0, max: 10 },
+    },
+  },
+  connectionResolver: (context) => {
+    if (context.isTransaction || context.transactionId) return 'master';
+    if (context.queryContext?.forceWriter) return 'master';
+    const isRead = ['select', 'first', 'pluck'].includes(context.method);
+    return isRead ? 'replica' : 'master';
+  },
+});
+```
+
+The resolver receives a context object with these fields (when available):
+
+- `method`: query method (`select`, `insert`, `update`, `delete`, `raw`, `schema`, etc.)
+- `tableName`: primary table name for query builders
+- `sql`: raw SQL (only for `knex.raw(...)`)
+- `queryContext`: value set via `.queryContext(...)`
+- `transactionId` / `isTransaction`: set when acquiring a transaction connection
+
+##### Dynamic per-connection config (read replica fan‑out)
+
+To round‑robin across multiple read replicas in a single pool (the use case covered by `knex-dynamic-connection`), you can make a named connection’s `connection` a function. It is called every time the pool creates a new physical connection.
+
+```js
+const replicas = [
+  { host: 'replica1.db', user: 'read_user', password: 'secret' },
+  { host: 'replica2.db', user: 'read_user', password: 'secret' },
+];
+let i = 0;
+
+const knex = require('knex')({
+  client: 'pg',
+  connections: {
+    master: { connection: { host: 'master.db', user: 'write_user', password: 'secret' } },
+    replica: {
+      connection: () => replicas[i++ % replicas.length],
+    },
+  },
+  connectionResolver: (context) => {
+    const isRead = ['select', 'first', 'pluck'].includes(context.method);
+    return isRead ? 'replica' : 'master';
+  },
+});
+```
+
+If you want caching or custom refresh behavior, implement it inside your function.
+
 You can also connect via a unix domain socket, which will ignore host and port.
 
 ```js
